@@ -1,11 +1,15 @@
 package com.example.jwt_authenticator.controller;
 
+import com.example.jwt_authenticator.dto.RegisterRequest;
+import com.example.jwt_authenticator.dto.RegisterResponse;
 import com.example.jwt_authenticator.security.RefreshCookieFactory;
 import com.example.jwt_authenticator.dto.AuthResponse;
 import com.example.jwt_authenticator.dto.LoginRequest;
 import com.example.jwt_authenticator.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,6 +23,12 @@ public class AuthController {
 
     private final AuthService authService;
     private final RefreshCookieFactory refreshCookieFactory;
+
+    @PostMapping("/register")
+    public ResponseEntity<RegisterResponse> register(@Valid @RequestBody RegisterRequest req) {
+        RegisterResponse response = authService.register(req);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
 
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest req, HttpServletRequest httpReq) {

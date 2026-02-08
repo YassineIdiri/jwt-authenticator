@@ -1,8 +1,8 @@
 package com.example.jwt_authenticator.service;
 
-import com.example.jwt_authenticator.dto.AuthResponse;
-import com.example.jwt_authenticator.dto.LoginRequest;
+import com.example.jwt_authenticator.dto.*;
 import com.example.jwt_authenticator.entity.User;
+import com.example.jwt_authenticator.exception.UserAlreadyExistsException;
 import com.example.jwt_authenticator.repository.UserRepository;
 import com.example.jwt_authenticator.security.CustomUserDetails;
 import jakarta.servlet.http.HttpServletRequest;
@@ -10,6 +10,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import java.time.LocalDateTime;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +25,48 @@ public class AuthService {
 
     public record AuthResult(String accessToken, long expiresIn, String username,
                              String refreshTokenRaw, java.time.LocalDateTime refreshExpiresAt) {}
+
+    private static final Pattern COMMON_PASSWORDS = Pattern.compile(
+            ".*(password|123456|qwerty|admin|letmein|welcome).*",
+            Pattern.CASE_INSENSITIVE
+    );
+    @Transactional
+    public RegisterResponse register(RegisterRequest req) {
+        req.validate();
+
+        if (COMMON_PASSWORDS.matcher(req.password()).matches()) {
+            throw new IllegalArgumentException("This password is too common and easily guessable");
+        }
+
+        if (userRepository.existsByUsername(req.username())) {
+            throw new UserAlreadyExistsException("USER_ALREADY_EXISTS");
+        }
+
+        if (userRepository.existsByEmail(req.email())) {
+            throw new UserAlreadyExistsException("EMAIL_ALREADY_EXISTS");
+        }
+
+        String normalizedEmail = req.email().toLowerCase().trim();
+
+        String hashedPassword = passwordEncoder.encode(req.password());
+
+        User user = new User();
+        user.setUsername(req.username().trim());
+        user.setEmail(normalizedEmail);
+        user.setPasswordHash(hashedPassword);
+        user.setRole(Role.USER);
+        user.setActive(true);
+        user.setLocked(false);
+        user.setCreatedAt(LocalDateTime.now());
+        User savedUser = userRepository.save(user);
+
+        return RegisterResponse.of(
+                savedUser.getUsername(),
+                savedUser.getEmail(),
+                savedUser.getCreatedAt()
+        );
+    }
+
 
     public AuthResult login(LoginRequest req, HttpServletRequest httpReq) {
         User user = userRepository.findByUsername(req.username())
