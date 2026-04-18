@@ -11,7 +11,8 @@ import java.time.LocalDateTime;
         name = "users",
         indexes = {
                 @Index(name = "idx_user_username", columnList = "username"),
-                @Index(name = "idx_user_email", columnList = "email")
+                @Index(name = "idx_user_email",    columnList = "email"),
+                @Index(name = "idx_user_provider", columnList = "provider, provider_id")
         }
 )
 @Getter
@@ -20,6 +21,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @Builder
 public class User {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -30,12 +32,32 @@ public class User {
     @Column(nullable = false, unique = true, length = 150)
     private String email;
 
-    @Column(name = "password_hash", nullable = false, length = 255)
+    // ✅ nullable — les users Google n'ont pas de mot de passe
+    @Column(name = "password_hash", length = 255)
     private String passwordHash;
+
+    // ✅ Champs e-commerce
+    @Column(name = "first_name", length = 100)
+    private String firstName;
+
+    @Column(name = "last_name", length = 100)
+    private String lastName;
+
+    @Column(name = "phone", length = 20)
+    private String phone;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private Role role;
+
+    // ✅ BOTH = compte local + Google liés
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private AuthProvider provider = AuthProvider.LOCAL;
+
+    @Column(name = "provider_id", length = 100)
+    private String providerId;
 
     @Column(nullable = false)
     private boolean active = true;
@@ -47,7 +69,6 @@ public class User {
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
-
     private LocalDateTime lastLoginAt;
 
     @PrePersist
@@ -68,5 +89,20 @@ public class User {
 
     public boolean isAccountUsable() {
         return active && !locked;
+    }
+
+    // ✅ True seulement si AUCUN password → pas de login classique possible
+    public boolean isOAuthUser() {
+        return provider == AuthProvider.GOOGLE;
+    }
+
+    // ✅ Nouveau — le compte supporte-t-il le login par password ?
+    public boolean supportsPasswordLogin() {
+        return provider == AuthProvider.LOCAL || provider == AuthProvider.BOTH;
+    }
+
+    // ✅ Nouveau — le compte supporte-t-il le login Google ?
+    public boolean supportsGoogleLogin() {
+        return provider == AuthProvider.GOOGLE || provider == AuthProvider.BOTH;
     }
 }

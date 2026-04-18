@@ -15,16 +15,16 @@ import java.util.Arrays;
 @RequiredArgsConstructor
 public class RefreshCookieFactory {
 
-    @Value("${security.refresh.cookie-name:refresh_token}")
+    @Value("${app.security.refresh.cookie-name:refresh_token}")
     private String cookieName;
 
-    @Value("${security.refresh.cookie-path:/api/auth}")
+    @Value("${app.security.refresh.cookie-path:/api/auth}")
     private String cookiePath;
 
-    @Value("${security.refresh.secure:false}")
+    @Value("${app.security.refresh.secure:false}")
     private boolean secure;
 
-    @Value("${security.refresh.same-site:Lax}")
+    @Value("${app.security.refresh.same-site:Lax}")
     private String sameSite;
 
     public String cookieName() {

@@ -1,108 +1,117 @@
-import { Component, ChangeDetectorRef } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import {
+  FormBuilder,
+  ReactiveFormsModule,
+  Validators,
+} from '@angular/forms';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router, RouterModule } from '@angular/router';
-import { HttpErrorResponse } from '@angular/common/http';
-import { ui, Ui } from '../../shared/utils/ui.helper';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { map } from 'rxjs';
 import { AuthService } from '../../service/auth.service';
+import { ApiError, LoginRequest } from '../../models/auth.models';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterModule],
-  templateUrl: './login.component.html'
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [CommonModule, ReactiveFormsModule, RouterLink],
+  templateUrl: './login.component.html',
 })
 export class LoginComponent {
-  loginForm: FormGroup;
-  errorMessage: string = '';
-  loading: boolean = false;
-  
-  private ui: Ui;
+  private fb     = inject(FormBuilder);
+  private auth   = inject(AuthService);
+  private router = inject(Router);
+  private route  = inject(ActivatedRoute);
 
-  constructor(
-    private fb: FormBuilder,
-    private authService: AuthService,
-    private router: Router,
-    cdr: ChangeDetectorRef
-  ) {
-    this.ui = ui(cdr);
-    
-    this.loginForm = this.fb.group({
-      username: ['', [Validators.required]],
-      password: ['', [Validators.required]],
-      rememberMe: [false]
-    });
+  // ── State local en signals ────────────────────────────────
+  loading      = signal(false);
+  serverError  = signal<string | null>(null);
+  showPassword = signal(false);
+
+  // ── Raison de redirection (session expirée, unauthorized…) ──
+  // toSignal() : Observable → signal, parfait pour les queryParams
+  reason = toSignal(
+    this.route.queryParamMap.pipe(map(p => p.get('reason'))),
+    { initialValue: null }
+  );
+
+  // ── Computed : message selon la raison ───────────────────
+  reasonMessage = computed(() => {
+    const map: Record<string, string> = {
+      session_expired: 'Votre session a expiré. Veuillez vous reconnecter.',
+      unauthorized:    'Vous devez être connecté pour accéder à cette page.',
+    };
+    return map[this.reason() ?? ''] ?? null;
+  });
+
+  // ── Formulaire ────────────────────────────────────────────
+  form = this.fb.group({
+    username:   ['', [Validators.required]],
+    password:   ['', [Validators.required]],
+    rememberMe: [false],
+  });
+
+  toggleShowPassword(): void {
+    this.showPassword.update(v => !v);
   }
 
-  onSubmit(): void {
-    this.ui.set(() => {
-      this.errorMessage = '';
-    });
+  // ── Helpers validation ────────────────────────────────────
+  isInvalid(field: string): boolean {
+    const ctrl = this.form.get(field)!;
+    return ctrl.invalid && (ctrl.dirty || ctrl.touched);
+  }
 
-    if (this.loginForm.invalid) {
-      Object.keys(this.loginForm.controls).forEach(key => {
-        this.loginForm.get(key)?.markAsTouched();
-      });
+  hasError(field: string, error: string): boolean {
+    const ctrl = this.form.get(field)!;
+    return ctrl.hasError(error) && (ctrl.dirty || ctrl.touched);
+  }
+
+  // ── Submit ────────────────────────────────────────────────
+  onSubmit(): void {
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
       return;
     }
 
-    this.ui.set(() => {
-      this.loading = true;
-    });
+    this.loading.set(true);
+    this.serverError.set(null);
 
-    this.authService.login(this.loginForm.value)
-      .pipe(this.ui.pipeRepaint())
-      .subscribe({
-        next: (response: any) => {
-          console.log('Login success:', response);
-          this.authService.saveToken(response.accessToken);
-          this.authService.saveUsername(response.username);
-          this.ui.set(() => {
-            this.loading = false;
-          });
-          this.router.navigate(['/home']);
-        },
-        error: (error: HttpErrorResponse) => {
-          console.log('Login error:', error);
-          console.log('Error details:', error.error);
-          
-          this.ui.set(() => {
-            this.loading = false;
-            
-            if (error.error?.message) {
-              this.errorMessage = error.error.message;
-            } else if (error.error?.code) {
-              this.errorMessage = this.getErrorMessage(error.error.code);
-            } else if (error.status === 401) {
-              this.errorMessage = 'Invalid username or password';
-            } else if (error.status === 0) {
-              this.errorMessage = 'Cannot connect to server';
-            } else {
-              this.errorMessage = 'An error occurred. Please try again.';
-            }
-          });
-          
-          console.log('After error - loading:', this.loading, 'errorMessage:', this.errorMessage);
-        }
-      });
-  }
-
-  private getErrorMessage(code: string): string {
-    const messages: Record<string, string> = {
-      'INVALID_CREDENTIALS': 'Invalid username or password',
-      'ACCOUNT_DISABLED': 'Your account has been deactivated',
-      'ACCOUNT_LOCKED': 'Your account has been locked',
-      'USER_NOT_FOUND': 'Invalid username or password',
-      'UNAUTHORIZED': 'Invalid username or password'
+    const payload: LoginRequest = {
+      username:   this.form.value.username!,
+      password:   this.form.value.password!,
+      rememberMe: this.form.value.rememberMe ?? false,
     };
-    return messages[code] || 'Authentication failed';
+
+    this.auth.login(payload).subscribe({
+      next: () => this.router.navigate(['/home']),
+      error: (err) => {
+        this.loading.set(false);
+        const apiError = err?.error as ApiError;
+        this.serverError.set(this.mapError(apiError?.code));
+      },
+    });
   }
 
-  get username() {
-    return this.loginForm.get('username');
+  // ── OAuth2 Google ─────────────────────────────────────────
+  loginWithGoogle(): void {
+    this.auth.initiateGoogleLogin();
   }
 
-  get password() {
-    return this.loginForm.get('password');
+  // ── Mapping erreurs backend → messages FR ─────────────────
+  private mapError(code: string): string {
+    const map: Record<string, string> = {
+      INVALID_CREDENTIALS:               'Identifiant ou mot de passe incorrect.',
+      ACCOUNT_LOCKED:                    'Votre compte est temporairement bloqué.',
+      ACCOUNT_DISABLED:                  'Votre compte a été désactivé.',
+      OAUTH2_ACCOUNT_USE_GOOGLE_LOGIN:   'Ce compte utilise Google. Connectez-vous via Google.',
+    };
+    return map[code] ?? 'Une erreur est survenue. Veuillez réessayer.';
   }
 }

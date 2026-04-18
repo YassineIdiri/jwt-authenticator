@@ -1,9 +1,11 @@
 package com.example.jwt_authenticator.service;
 
+import com.example.jwt_authenticator.dto.SessionResponse;
 import com.example.jwt_authenticator.dto.TokenType;
 import com.example.jwt_authenticator.entity.RefreshToken;
 import com.example.jwt_authenticator.exception.ErrorCode;
 import com.example.jwt_authenticator.exception.InvalidTokenException;
+import com.example.jwt_authenticator.repository.OAuth2PendingTokenRepository;
 import com.example.jwt_authenticator.repository.RefreshTokenRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +28,7 @@ import java.util.UUID;
 public class RefreshTokenService {
 
     private final RefreshTokenRepository refreshTokenRepository;
+    private final OAuth2PendingTokenRepository pendingTokenRepository;
 
     @Value("${app.security.refresh.days:30}")
     private int refreshDays;
@@ -106,6 +109,38 @@ public class RefreshTokenService {
         return issue(old.getUserId(), rememberMe, request);
     }
 
+    public List<SessionResponse> getActiveSessions(Long userId, String currentRawToken) {
+        String currentHash = sha256(currentRawToken); // ta méthode de hash existante
+
+        List<RefreshToken> all = refreshTokenRepository.findByUserIdAndRevokedFalse(userId);
+        log.info("Sessions pour userId={} → {} trouvées", userId, all.size()); // ← ajoute ça
+
+        return refreshTokenRepository
+                .findByUserIdAndRevokedFalse(userId)
+                .stream()
+                .filter(rt -> !rt.isExpired())
+                .map(rt -> new SessionResponse(
+                        rt.getId(),
+                        rt.getDeviceName(),
+                        rt.getIpAddress(),
+                        rt.getLastUsedAt(),
+                        rt.getTokenHash().equals(currentHash)
+                ))
+                .toList();
+    }
+
+    public void revokeSession(Long sessionId, Long userId) {
+        RefreshToken rt = refreshTokenRepository.findById(sessionId)
+                .orElseThrow(() -> new InvalidTokenException("Session introuvable", ErrorCode.REFRESH_TOKEN_INVALID));
+
+        if (!rt.getUserId().equals(userId)) {
+            throw new InvalidTokenException("Accès interdit", ErrorCode.REFRESH_TOKEN_INVALID);
+        }
+
+        rt.revoke();
+        refreshTokenRepository.save(rt);
+    }
+
     @Transactional
     public void revoke(String rawToken) {
         if (rawToken == null || rawToken.isBlank()) return;
@@ -128,6 +163,16 @@ public class RefreshTokenService {
         int deleted = refreshTokenRepository.deleteExpiredTokens(threshold);
         log.info("Cleanup refresh tokens: deleted={}, threshold={}", deleted, threshold);
     }
+
+    @Scheduled(cron = "0 * * * * *")
+    @Transactional
+    public void cleanupExpiredOAuth2Codes() {
+        int deleted = pendingTokenRepository.deleteExpiredTokens(LocalDateTime.now());
+        if (deleted > 0) {
+            log.info("Cleanup OAuth2 pending tokens: deleted={}", deleted);
+        }
+    }
+
 
     private void enforceMaxSessions(Long userId) {
         long active = refreshTokenRepository.countActiveSessions(userId, LocalDateTime.now());
@@ -167,14 +212,15 @@ public class RefreshTokenService {
     }
 
     private String extractDeviceName(HttpServletRequest request) {
-        if (request == null) return "Unknown";
         String ua = request.getHeader("User-Agent");
         if (ua == null) return "Unknown";
+        if (ua.contains("Firefox"))   return "Firefox";
+        if (ua.contains("Chrome"))    return "Chrome";
         if (ua.contains("iPhone") || ua.contains("iPad")) return "iOS Device";
-        if (ua.contains("Android")) return "Android Device";
-        if (ua.contains("Windows")) return "Windows PC";
+        if (ua.contains("Android"))   return "Android Device";
+        if (ua.contains("Windows"))   return "Windows PC";
         if (ua.contains("Macintosh")) return "Mac";
-        if (ua.contains("Linux")) return "Linux PC";
+        if (ua.contains("Linux"))     return "Linux PC";
         return "Unknown Device";
     }
 }

@@ -19,14 +19,6 @@ public record RegisterRequest(
                 regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]+$",
                 message = "The password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"
         )
-        String password,
-
-        @NotBlank(message = "Password confirmation is required")
-        String confirmPassword
+        String password
 ) {
-    public void validate() {
-        if (!password.equals(confirmPassword)) {
-            throw new IllegalArgumentException("The passwords do not match");
-        }
-    }
 }

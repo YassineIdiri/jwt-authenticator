@@ -1,5 +1,6 @@
 package com.example.jwt_authenticator.repository;
 
+import com.example.jwt_authenticator.entity.AuthProvider;
 import com.example.jwt_authenticator.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -12,4 +13,5 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByUsername(String username);
     Optional<User> findByEmail(String email);
     boolean existsByEmail(String email);
+    Optional<User> findByProviderAndProviderId(AuthProvider provider, String providerId);
 }
