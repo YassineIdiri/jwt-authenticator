@@ -9,21 +9,7 @@ jobs:
   backend:
     name: Backend (Spring Boot)
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_DB: base-db_ci
-          POSTGRES_USER: base
-          POSTGRES_PASSWORD: base
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U base -d base-db_ci"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
+    # ✅ Supprimé : services.postgres — Testcontainers démarre son propre container
 
     steps:
       - uses: actions/checkout@v4
@@ -36,10 +22,16 @@ jobs:
           cache: maven
 
       - name: Build + tests
-        env:
-          SPRING_PROFILES_ACTIVE: ci
-          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/base-db_ci
         run: mvn -B -ntp clean verify
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          # JWT
+          APP_JWT_SECRET: dGVzdC1zZWNyZXQtcG91ci1sZXMtdGVzdHMtdW5pdGFpcmVzLWp3dC1hdXRoZW50aWNhdG9y
+          # Refresh token
+          REFRESH_TOKEN_PEPPER: test-pepper-ci
+          # Google OAuth2 — fake credentials, jamais les vraies en CI
+          GOOGLE_CLIENT_ID: test-client-id
+          GOOGLE_CLIENT_SECRET: test-client-secret
 
   frontend:
     name: Frontend (Angular)
