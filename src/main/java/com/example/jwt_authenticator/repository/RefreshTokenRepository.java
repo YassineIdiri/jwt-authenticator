@@ -2,9 +2,12 @@ package com.example.jwt_authenticator.repository;
 
 import com.example.jwt_authenticator.dto.TokenType;
 import com.example.jwt_authenticator.entity.RefreshToken;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
@@ -36,4 +39,9 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
     int revokeAllByUserIdAndType(Long userId, TokenType type);
 
     List<RefreshToken> findByUserIdAndRevokedFalse(Long userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT COUNT(rt) FROM RefreshToken rt " +
+            "WHERE rt.userId = :userId AND rt.revoked = false AND rt.expiresAt > :now")
+    long countActiveSessionsForUpdate(@Param("userId") Long userId, @Param("now") LocalDateTime now);
 }
