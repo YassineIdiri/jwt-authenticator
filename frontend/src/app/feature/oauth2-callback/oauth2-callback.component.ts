@@ -17,7 +17,6 @@ import { ApiError } from '../../models/auth.models';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CommonModule],
   templateUrl: './oauth2-callback.component.html',
-
 })
 export class OAuth2CallbackComponent implements OnInit {
   private route  = inject(ActivatedRoute);
@@ -42,10 +41,11 @@ export class OAuth2CallbackComponent implements OnInit {
 
     this.auth.handleOAuth2Callback(code).subscribe({
       next: () => this.router.navigate(['/']),
-      error: (err: HttpErrorResponse) => {   // ✅ type explicite
+      error: (err: HttpErrorResponse) => {
         const apiError = err?.error as ApiError;
+        // FIX: code → errorCode (unified field name)
         this.error.set(
-          apiError?.code === 'OAUTH2_CODE_EXPIRED'
+          apiError?.errorCode === 'OAUTH2_CODE_EXPIRED'
             ? 'Le lien de connexion a expiré. Veuillez réessayer.'
             : 'Échec de la connexion Google. Veuillez réessayer.'
         );

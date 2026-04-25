@@ -190,6 +190,15 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/sessions/others")
+    public ResponseEntity<Void> revokeOtherSessions(HttpServletRequest httpReq) {
+        String refreshToken = requireRefreshCookie(httpReq);
+        Long userId = authService.extractUserIdFromContext();
+        refreshTokenService.revokeAllOthers(refreshToken, userId);
+
+        return ResponseEntity.noContent().build();
+    }
+
     // -------------------------------------------------------------------------
     // Internal helpers
     // -------------------------------------------------------------------------

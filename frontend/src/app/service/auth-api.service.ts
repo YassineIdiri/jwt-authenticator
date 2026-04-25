@@ -61,4 +61,10 @@ export class AuthApiService {
       withCredentials: true
     });
   }
+
+  revokeOtherSessions(): Observable<void> {
+    return this.http.delete<void>(`${this.api}/sessions/others`, {
+      withCredentials: true
+    });
+  }
 }

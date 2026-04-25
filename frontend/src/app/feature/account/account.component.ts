@@ -10,6 +10,7 @@ import { CommonModule } from '@angular/common';
 import { AuthService } from '../../service/auth.service';
 import { AuthApiService } from '../../service/auth-api.service';
 import { SessionResponse } from '../../models/auth.models';
+import { Router } from '@angular/router';
 
 type Tab = 'sessions' | 'profile';
 
@@ -23,6 +24,7 @@ type Tab = 'sessions' | 'profile';
 export class AccountComponent implements OnInit {
   private auth    = inject(AuthService);
   private authApi = inject(AuthApiService);
+  private router = inject(Router);
 
   username = this.auth.username;
   isAdmin  = this.auth.isAdmin;
@@ -41,31 +43,25 @@ export class AccountComponent implements OnInit {
   );
 
   ngOnInit(): void {
-    console.log('🟡 ngOnInit');
-    this.auth.waitForReady().then(() => {
-      console.log('🟢 waitForReady resolved');
-      this.loadSessions();
-    });
+    this.auth.waitForReady().then(() => this.loadSessions());
   }
 
   loadSessions(): void {
-    console.log('📡 loadSessions appelé');
     this.loading.set(true);
     this.error.set(null);
 
     this.authApi.getSessions().subscribe({
       next: (data) => {
-        console.log('✅ sessions reçues', data);
         this.sessions.set(data);
         this.loading.set(false);
       },
-      error: (err) => {
-        console.log('❌ erreur sessions', err);
+      error: () => {
         this.error.set('Impossible de charger les sessions.');
         this.loading.set(false);
       }
     });
   }
+
   setTab(tab: Tab): void {
     this.activeTab.set(tab);
   }
@@ -78,20 +74,30 @@ export class AccountComponent implements OnInit {
   }
 
   revokeAllOthers(): void {
-    this.auth.logoutAll().subscribe({
-      next: () => this.loadSessions()
+    this.loading.set(true);
+    this.error.set(null);
+
+    this.authApi.revokeOtherSessions().subscribe({
+      next: () => this.loadSessions(),
+      error: () => {
+        this.error.set('Erreur lors de la déconnexion des autres appareils.');
+        this.loading.set(false);
+      }
     });
   }
 
   onLogout(): void {
-    this.auth.logout().subscribe();
+    this.auth.logout().subscribe({
+      next: () => this.router.navigate(['/login'])
+    });
+  }
+  formatDate(dateStr: string): string {
+      const date = new Date(dateStr);
+      return new Intl.DateTimeFormat('fr-FR', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      }).format(date);
+    }
   }
 
-  formatDate(dateStr: string): string {
-    const date = new Date(dateStr);
-    return new Intl.DateTimeFormat('fr-FR', {
-      day: '2-digit', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit'
-    }).format(date);
-  }
-}
+

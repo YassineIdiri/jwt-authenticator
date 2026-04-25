@@ -14,17 +14,16 @@ import {
 } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { AuthService } from '../../service/auth.service';
 import { ApiError, RegisterRequest } from '../../models/auth.models';
 
-// ── Validator : les deux mots de passe doivent correspondre ──
 function matchPasswords(group: AbstractControl): ValidationErrors | null {
   const pw  = group.get('password')?.value;
   const cpw = group.get('confirmPassword')?.value;
   return pw === cpw ? null : { passwordMismatch: true };
 }
 
-// ── Validator : force du mot de passe ────────────────────────
 function passwordStrength(ctrl: AbstractControl): ValidationErrors | null {
   const v = ctrl.value as string;
   if (!v) return null;
@@ -48,28 +47,39 @@ export class RegisterComponent {
   private auth   = inject(AuthService);
   private router = inject(Router);
 
-  // ── State local en signals ────────────────────────────────
   loading       = signal(false);
   serverError   = signal<string | null>(null);
   success       = signal(false);
   showPassword  = signal(false);
   showConfirm   = signal(false);
 
-  // ── Formulaire ────────────────────────────────────────────
   form = this.fb.group(
     {
       username:        ['', [Validators.required, Validators.minLength(3), Validators.maxLength(30)]],
       email:           ['', [Validators.required, Validators.email]],
-      password:        ['', [Validators.required, Validators.minLength(8), passwordStrength]],
+      password:        ['', [Validators.required, Validators.minLength(10), passwordStrength]],
       confirmPassword: ['', Validators.required],
     },
     { validators: matchPasswords }
   );
 
-  // ── Computed : force du mot de passe (1 faible → 4 fort) ──
+  // ─────────────────────────────────────────────────────
+  //  FIX: computed() ne réagit pas aux valeurs d'un FormGroup
+  //  car form.get('password')?.value n'est pas un signal Angular.
+  //
+  //  toSignal(valueChanges) convertit l'Observable des changements
+  //  en signal réactif — les computed se mettent à jour
+  //  automatiquement à chaque frappe dans le champ.
+  // ─────────────────────────────────────────────────────
+
+  passwordValue = toSignal(
+    this.form.get('password')!.valueChanges,
+    { initialValue: '' }
+  );
+
   passwordStrengthLevel = computed(() => {
-    const v = this.form.get('password')?.value ?? '';
-    if (!v || v.length < 8) return 0;
+    const v = this.passwordValue() ?? '';
+    if (!v || v.length < 10) return 0;
     let score = 0;
     if (/[a-z]/.test(v)) score++;
     if (/[A-Z]/.test(v)) score++;
@@ -88,18 +98,9 @@ export class RegisterComponent {
     return colors[this.passwordStrengthLevel()] ?? '';
   });
 
-  // ── Toggle visibilité mots de passe ──────────────────────
-  // ✅ Méthodes explicites — les arrow functions (v => !v)
-  //    ne sont pas supportées dans les templates Angular
-  toggleShowPassword(): void {
-    this.showPassword.update(v => !v);
-  }
+  toggleShowPassword(): void { this.showPassword.update(v => !v); }
+  toggleShowConfirm():  void { this.showConfirm.update(v => !v);  }
 
-  toggleShowConfirm(): void {
-    this.showConfirm.update(v => !v);
-  }
-
-  // ── Helpers validation ────────────────────────────────────
   isInvalid(field: string): boolean {
     const ctrl = this.form.get(field)!;
     return ctrl.invalid && (ctrl.dirty || ctrl.touched);
@@ -117,7 +118,6 @@ export class RegisterComponent {
     );
   }
 
-  // ── Submit ────────────────────────────────────────────────
   onSubmit(): void {
     if (this.form.invalid) {
       this.form.markAllAsTouched();
@@ -129,7 +129,6 @@ export class RegisterComponent {
 
     const { username, email, password } = this.form.value;
 
-    // ✅ confirmPassword volontairement exclu de la requête
     const payload: RegisterRequest = {
       username: username!,
       email:    email!,
@@ -145,22 +144,21 @@ export class RegisterComponent {
       error: (err) => {
         this.loading.set(false);
         const apiError = err?.error as ApiError;
-        this.serverError.set(this.mapError(apiError?.code));
+        this.serverError.set(this.mapError(apiError?.errorCode));
       },
     });
   }
 
-  // ── OAuth2 Google ──────────────────────────────────────────
   loginWithGoogle(): void {
     this.auth.initiateGoogleLogin();
   }
 
-  // ── Mapping erreurs backend → messages FR ─────────────────
-  private mapError(code: string): string {
-    const map: Record<string, string> = {
+  private mapError(errorCode: string | undefined): string {
+    const messages: Record<string, string> = {
       USER_ALREADY_EXISTS:  'Cet identifiant est déjà utilisé.',
       EMAIL_ALREADY_EXISTS: 'Cette adresse e-mail est déjà associée à un compte.',
+      VALIDATION_ERROR:     'Veuillez vérifier les informations saisies.',
     };
-    return map[code] ?? 'Une erreur est survenue. Veuillez réessayer.';
+    return messages[errorCode ?? ''] ?? 'Une erreur est survenue. Veuillez réessayer.';
   }
 }

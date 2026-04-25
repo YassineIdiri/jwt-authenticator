@@ -305,6 +305,19 @@ public class RefreshTokenService {
                 });
     }
 
+    @Transactional
+    public void revokeAllOthers(String currentRawToken, Long userId) {
+        String currentHash = hmac(currentRawToken);
+
+        refreshTokenRepository.findByUserIdAndRevokedFalse(userId)
+                .stream()
+                .filter(rt -> !rt.getTokenHash().equals(currentHash))
+                .forEach(rt -> {
+                    rt.revoke();
+                    refreshTokenRepository.save(rt);
+                });
+    }
+
     // -------------------------------------------------------------------------
     // Hashing
     // -------------------------------------------------------------------------
